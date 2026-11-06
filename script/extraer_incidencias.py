@@ -5,11 +5,12 @@ Mejoras respecto a la versión anterior:
   - CONTEXTO: además de la línea donde sale el equipo ("descripcion"),
     guarda las líneas de alrededor ("contexto"). Antes solo se guardaba la
     línea suelta, con el mismo problema que tenía el buscador.
-  - Reconoce tags con guion (P-101B, T-201) además de sin guion (P101B).
+  - Reconoce los formatos de la planta: K-501, K501, PK601, PB101B2,
+    PB-151A-2 y 6540C1, también escritos en minúscula.
     La columna "equipo_norm" (sin guiones ni espacios) permite que P-101B y
     P101B cuenten como el mismo equipo.
   - Quita duplicados (el mismo equipo repetido en la misma línea).
-  - Descarta prefijos que no son equipos (OT4455 = orden de trabajo...).
+  - Descarta lo que no son equipos (OT4455, DN150, PN16, 500m3...).
   - Añade "fecha" y "etiquetas" (problemas/acciones de la línea).
   - Genera también incidencias_reales.csv (solo las líneas con alguna
     palabra clave), que es lo que usa la web. Sustituye a los scripts de
@@ -43,12 +44,39 @@ SALIDA_REALES = os.path.join(CARPETA_BASE, "incidencias_reales.csv")
 # Líneas que se guardan por delante y por detrás de cada mención
 CONTEXTO = 2
 
-# 1-4 letras, guion opcional, 2-5 cifras y sufijo opcional: P-101B, FV2034, TK-12-A
-PATRON_EQUIPO = re.compile(r"\b[A-Z]{1,4}-?[0-9]{2,5}[A-Z0-9\-]*")
+# Formatos de tag de la planta:
+#   Letras + número:  K-501, K501, PK601, PB101B2, PB-151A-2
+#   (también en minúscula: "k501" se guarda como K501)
+PATRON_LETRAS = re.compile(
+    r"\b[A-Z]{1,4}-?\d{2,5}[A-Z]{0,2}\d{0,2}(?:-[A-Z0-9]{1,3})*\b",
+    re.IGNORECASE,
+)
+#   Número + letra + número: 6540C1  (solo en mayúscula, para no coger
+#   cantidades como "500m3")
+PATRON_NUMERO = re.compile(r"\b\d{3,5}-?[A-Z]{1,2}\d{1,2}(?:-[A-Z0-9]{1,3})*\b")
 
-# Prefijos que cumplen el patrón pero NO son equipos. Ajusta esta lista
+# Cosas que cumplen el patrón pero NO son equipos. Ajusta estas listas
 # a tu planta cuando veas falsos positivos en la ficha de equipo.
-PREFIJOS_EXCLUIDOS = {"OT"}
+PREFIJOS_EXCLUIDOS = {
+    "OT",        # orden de trabajo (OT4455)
+    "DN", "PN",  # diámetro / presión nominal de tubería (DN150, PN16)
+}
+LETRAS_UNIDADES = {"M", "MM", "CM", "KM", "KG", "KW", "MW", "KV", "L", "HZ"}
+
+
+def buscar_equipos(linea):
+    """Devuelve los tags de equipo de una línea, en mayúsculas y sin repetir."""
+    encontrados = {}
+    for patron in (PATRON_LETRAS, PATRON_NUMERO):
+        for m in patron.finditer(linea):
+            tag = m.group().upper()
+            letras = re.search(r"[A-Z]+", tag).group()
+            if tag[0].isalpha() and letras in PREFIJOS_EXCLUIDOS:
+                continue
+            if tag[0].isdigit() and letras in LETRAS_UNIDADES:
+                continue
+            encontrados.setdefault(normalizar_tag(tag), tag)
+    return encontrados  # {equipo_norm: equipo}
 
 
 def etiquetar(texto):
@@ -68,15 +96,7 @@ def main():
         lineas = segmentar(fila["texto"])
 
         for i, linea in enumerate(lineas):
-            vistos = set()
-            for m in PATRON_EQUIPO.finditer(linea):
-                equipo = m.group().rstrip("-")
-                prefijo = re.match(r"[A-Z]+", equipo).group()
-                norm = normalizar_tag(equipo)
-                if prefijo in PREFIJOS_EXCLUIDOS or norm in vistos:
-                    continue
-                vistos.add(norm)
-
+            for norm, equipo in buscar_equipos(linea).items():
                 ini = max(0, i - CONTEXTO)
                 contexto = "\n".join(lineas[ini:i + CONTEXTO + 1])
 
