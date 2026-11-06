@@ -4,9 +4,12 @@ import pandas as pd
 import streamlit as st
 
 from buscador import (
+    ACCIONES,
+    PROBLEMAS,
     buscar_en_texto,
     extraer_fecha,
     normalizar,
+    normalizar_tag,
     parsear_consulta,
     resaltar_html,
 )
@@ -70,30 +73,18 @@ def cargar_relevos():
 def cargar_incidencias():
     df = pd.read_csv(RUTA_INCIDENCIAS)
     df["descripcion"] = df["descripcion"].fillna("").astype(str)
-    df["etiquetas"] = df["etiquetas"].fillna("").astype(str)
     df["archivo"] = df["archivo"].fillna("").astype(str)
+    # Columnas opcionales: así funciona con el CSV antiguo y con el nuevo
+    for col in ["etiquetas", "contexto"]:
+        df[col] = df[col].fillna("").astype(str) if col in df else ""
     df["fecha"] = df["archivo"].map(extraer_fecha)
+    # P-101B, P101B y "p 101 b" cuentan como el mismo equipo
+    df["equipo_norm"] = df["equipo"].map(normalizar_tag)
     return df
 
 
 relevos = cargar_relevos()
 incidencias = cargar_incidencias()
-
-# --------------------------------------------------
-# PALABRAS PROBLEMA / ACCION (ya sin duplicados con tilde:
-# se compara siempre sobre texto normalizado)
-# --------------------------------------------------
-
-PROBLEMAS = [
-    "fuga", "fallo", "averia", "paso interno", "mismatch", "alarma",
-    "interlock", "vibracion", "atasco", "obstruccion", "rebose", "disparo",
-]
-
-ACCIONES = [
-    "reparacion", "sustitucion", "solicitud", "limpieza", "revision",
-    "actuacion", "verificacion",
-]
-
 
 def mostrar_fragmentos(texto, terminos, contexto):
     """Pinta todas las zonas del parte donde aparece la búsqueda."""
@@ -207,8 +198,7 @@ with tab2:
 
     if equipo:
         hist = incidencias[
-            incidencias["equipo"].astype(str).str.upper().str.strip()
-            == equipo.upper()
+            incidencias["equipo_norm"] == normalizar_tag(equipo)
         ].copy()
 
         st.success(f"{len(hist)} incidencias encontradas")
@@ -255,7 +245,10 @@ with tab2:
             hist = hist.sort_values("fecha")
             for _, fila in hist.iterrows():
                 with st.expander(f"{fila['fecha'] or 'sin fecha'} | {fila['archivo']}"):
-                    st.write(fila["descripcion"])
+                    if fila["contexto"]:
+                        st.text(fila["contexto"])
+                    else:
+                        st.write(fila["descripcion"])
 
                     # Contexto: busca el equipo en el parte original completo.
                     original = relevos[relevos["archivo"] == fila["archivo"]]

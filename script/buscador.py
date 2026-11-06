@@ -30,6 +30,26 @@ def normalizar(texto):
 
 
 # --------------------------------------------------
+# PALABRAS PROBLEMA / ACCIÓN (sin tildes: se comparan con texto normalizado)
+# --------------------------------------------------
+
+PROBLEMAS = [
+    "fuga", "fallo", "averia", "paso interno", "mismatch", "alarma",
+    "interlock", "vibracion", "atasco", "obstruccion", "rebose", "disparo",
+]
+
+ACCIONES = [
+    "reparacion", "sustitucion", "solicitud", "limpieza", "revision",
+    "actuacion", "verificacion",
+]
+
+
+def normalizar_tag(tag):
+    """'p-101 b' -> 'P101B': mismo equipo aunque se escriba distinto."""
+    return re.sub(r"[\s\-]", "", str(tag)).upper()
+
+
+# --------------------------------------------------
 # FECHAS
 # --------------------------------------------------
 
