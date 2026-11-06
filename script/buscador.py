@@ -36,12 +36,35 @@ def normalizar(texto):
 PROBLEMAS = [
     "fuga", "fallo", "averia", "paso interno", "mismatch", "alarma",
     "interlock", "vibracion", "atasco", "obstruccion", "rebose", "disparo",
+    "ensuciamiento", "anomalia", "parada", "rotura", "escape", "derrame",
+    "incidencia", "problema",
 ]
 
 ACCIONES = [
     "reparacion", "sustitucion", "solicitud", "limpieza", "revision",
     "actuacion", "verificacion",
 ]
+
+
+def _patron_palabra(palabra):
+    # Palabra completa + plural opcional: "fuga" encuentra "fugas" pero NO
+    # "centrifuga"; "parada" NO encuentra "preparada" ni "separada".
+    return re.compile(r"\b" + re.escape(palabra) + r"(?:s|es)?\b")
+
+
+_PATRONES = {p: _patron_palabra(p) for p in PROBLEMAS + ACCIONES}
+
+
+def contar_palabra(texto, palabra):
+    """Veces que aparece la palabra completa (texto ya normalizado o no)."""
+    patron = _PATRONES.get(palabra) or _patron_palabra(palabra)
+    return len(patron.findall(normalizar(texto)))
+
+
+def palabras_presentes(texto, palabras):
+    """Lista de las palabras clave que aparecen como palabra completa."""
+    t = normalizar(texto)
+    return [p for p in palabras if (_PATRONES.get(p) or _patron_palabra(p)).search(t)]
 
 
 def normalizar_tag(tag):

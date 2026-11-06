@@ -10,7 +10,12 @@ Mejoras respecto a la versión anterior:
     P101B cuenten como el mismo equipo.
   - Quita duplicados (el mismo equipo repetido en la misma línea).
   - Descarta prefijos que no son equipos (OT4455 = orden de trabajo...).
-  - Añade "fecha" y "etiquetas" (problemas/acciones detectados en el contexto).
+  - Añade "fecha" y "etiquetas" (problemas/acciones de la línea).
+  - Genera también incidencias_reales.csv (solo las líneas con alguna
+    palabra clave), que es lo que usa la web. Sustituye a los scripts de
+    incidencias_enriquecidas.csv e incidencias_reales.csv.
+  - Busca PALABRAS COMPLETAS: antes "centrífuga" contaba como "fuga" y
+    "preparada"/"separada" como "parada".
 
 Uso:
     python extraer_incidencias.py
@@ -25,14 +30,15 @@ from buscador import (
     ACCIONES,
     PROBLEMAS,
     extraer_fecha,
-    normalizar,
     normalizar_tag,
+    palabras_presentes,
     segmentar,
 )
 
 CARPETA_BASE = os.environ.get("PARTES_BASE", r"C:\ProyectoPartesRelevo\base")
 ENTRADA = os.path.join(CARPETA_BASE, "relevos_historico.csv")
 SALIDA = os.path.join(CARPETA_BASE, "incidencias.csv")
+SALIDA_REALES = os.path.join(CARPETA_BASE, "incidencias_reales.csv")
 
 # Líneas que se guardan por delante y por detrás de cada mención
 CONTEXTO = 2
@@ -46,8 +52,7 @@ PREFIJOS_EXCLUIDOS = {"OT"}
 
 
 def etiquetar(texto):
-    t = normalizar(texto)
-    return ", ".join(p for p in PROBLEMAS + ACCIONES if p in t)
+    return ", ".join(palabras_presentes(texto, PROBLEMAS + ACCIONES))
 
 
 def main():
@@ -82,18 +87,28 @@ def main():
                     "archivo": archivo,
                     "descripcion": linea,
                     "contexto": contexto,
-                    "etiquetas": etiquetar(contexto),
+                    "etiquetas": etiquetar(linea),
                 })
 
-    inc = pd.DataFrame(incidencias)
+    columnas = ["equipo", "equipo_norm", "fecha", "archivo",
+                "descripcion", "contexto", "etiquetas"]
+    inc = pd.DataFrame(incidencias, columns=columnas)
     inc.to_csv(SALIDA, index=False, encoding="utf-8-sig")
 
-    print("Registros:", len(inc))
+    # Incidencias reales: la LÍNEA del equipo tiene alguna palabra clave.
+    # (Se mira la línea y no el contexto para que un equipo no "herede"
+    # la avería del equipo de la línea de al lado.)
+    reales = inc[inc["etiquetas"] != ""]
+    reales.to_csv(SALIDA_REALES, index=False, encoding="utf-8-sig")
+
+    print("Menciones de equipos:", len(inc))
+    print("Incidencias reales:  ", len(reales))
     if len(inc):
         print("Equipos distintos:", inc["equipo_norm"].nunique())
         print("Más mencionados:")
         print(inc["equipo"].value_counts().head(15).to_string())
     print("Salida:", SALIDA)
+    print("Salida:", SALIDA_REALES)
 
 
 if __name__ == "__main__":

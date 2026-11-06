@@ -7,7 +7,8 @@ Se va a hacer en el disco C: y tendrá carpetas script y base, dónde se almacen
 ```
 script/
   extraer_relevos.py      1) PDF/Excel de I:\ -> base/relevos_historico.csv (incremental)
-  extraer_incidencias.py  2) relevos_historico.csv -> base/incidencias.csv (equipo + contexto)
+  extraer_incidencias.py  2) relevos_historico.csv -> base/incidencias.csv (todas las menciones)
+                             y base/incidencias_reales.csv (las que tienen palabras clave)
   app.py                  Web de búsqueda (Streamlit)
   buscador.py             Lógica de búsqueda, contexto, fechas y troceado
   preparar_fragmentos.py  Genera base/fragmentos_relevos.csv (paso previo para la IA)

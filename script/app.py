@@ -7,6 +7,7 @@ from buscador import (
     ACCIONES,
     PROBLEMAS,
     buscar_en_texto,
+    contar_palabra,
     extraer_fecha,
     normalizar,
     normalizar_tag,
@@ -212,12 +213,12 @@ with tab2:
                 col2.metric("Primer registro", min(fechas))
                 col3.metric("Último registro", max(fechas))
 
-            texto_total = normalizar(" ".join(hist["descripcion"].tolist()))
+            texto_total = " ".join(hist["descripcion"].tolist())
 
-            # Se cuenta cuántas veces sale cada palabra, no solo si sale.
-            problemas = {p: texto_total.count(p) for p in PROBLEMAS}
+            # Cuántas veces sale cada palabra (completa: "centrífuga" no es "fuga")
+            problemas = {p: contar_palabra(texto_total, p) for p in PROBLEMAS}
             problemas = {p: n for p, n in problemas.items() if n}
-            acciones = {a: texto_total.count(a) for a in ACCIONES}
+            acciones = {a: contar_palabra(texto_total, a) for a in ACCIONES}
             acciones = {a: n for a, n in acciones.items() if n}
 
             st.divider()
