@@ -46,9 +46,24 @@ ACCIONES = [
 ]
 
 
+# Las acciones también se escriben como verbo ("reparada", "se sustituye",
+# "revisar"...). Aquí se indica qué formas cuentan para cada una.
+VARIANTES = {
+    "reparacion": r"repara(?:cion|ciones|d[oa]s?|r)",
+    "sustitucion": r"sustitu(?:cion|ciones|id[oa]s?|ir|ye)",
+    "solicitud": r"solicit(?:ud|udes|ad[oa]s?|ar|a)",
+    "limpieza": r"limpi(?:ezas?|ad[oa]s?|ar)",
+    "revision": r"revis(?:ion|iones|ad[oa]s?|ar)",
+    "actuacion": r"actua(?:cion|ciones|d[oa]s?|r)",
+    "verificacion": r"verific(?:acion|aciones|ad[oa]s?|ar)",
+}
+
+
 def _patron_palabra(palabra):
     # Palabra completa + plural opcional: "fuga" encuentra "fugas" pero NO
     # "centrifuga"; "parada" NO encuentra "preparada" ni "separada".
+    if palabra in VARIANTES:
+        return re.compile(r"\b" + VARIANTES[palabra] + r"\b")
     return re.compile(r"\b" + re.escape(palabra) + r"(?:s|es)?\b")
 
 
@@ -243,3 +258,108 @@ def trocear(texto, max_caracteres=1200, solape_segmentos=2):
     if nuevos:
         fragmentos.append("\n".join(actual))
     return fragmentos
+
+
+# --------------------------------------------------
+# TURNOS
+# --------------------------------------------------
+
+# Orden de los turnos dentro de un mismo día (ajústalo si en tu planta
+# el día empieza por otro turno).
+ORDEN_TURNOS = ["manana", "tarde", "noche"]
+
+
+def orden_turno(archivo):
+    """Posición del turno según el nombre del archivo (para ordenar)."""
+    nombre = normalizar(str(archivo))
+    for i, turno in enumerate(ORDEN_TURNOS):
+        if turno in nombre:
+            return i
+    return len(ORDEN_TURNOS)
+
+
+# --------------------------------------------------
+# CRONOLOGÍA RESUMIDA (agrupar lo que se repite turno tras turno)
+# --------------------------------------------------
+
+# Dos líneas se consideran "la misma" si se parecen al menos este tanto
+# (1.0 = idénticas). Tolera erratas y pequeños cambios de redacción.
+SIMILITUD_MINIMA = 0.85
+
+# Si una línea deja de aparecer más de estos días y luego vuelve,
+# se cuenta como un periodo nuevo.
+DIAS_SALTO = 7
+
+
+def _clave_texto(texto):
+    return re.sub(r"[^a-z0-9]+", " ", normalizar(texto)).strip()
+
+
+def _dias_entre(f1, f2):
+    from datetime import date
+    try:
+        return (date.fromisoformat(f2) - date.fromisoformat(f1)).days
+    except ValueError:
+        return 0
+
+
+def agrupar_repetidos(registros):
+    """
+    Recibe las menciones de un equipo (dicts con 'fecha', 'archivo',
+    'descripcion', ...) y junta las que dicen (casi) lo mismo en periodos.
+
+    Devuelve una lista de periodos ordenados por fecha de inicio:
+      {'desde', 'hasta', 'n', 'descripcion', 'primero', 'ultimo'}
+    donde 'primero' y 'ultimo' son los registros originales de los extremos.
+    """
+    from difflib import SequenceMatcher
+
+    registros = sorted(
+        registros, key=lambda r: (r["fecha"], orden_turno(r["archivo"]))
+    )
+
+    # 1) Agrupar por texto parecido
+    grupos = []          # [(clave_representante, [registros])]
+    exactos = {}         # clave -> índice de grupo (atajo para textos idénticos)
+    for r in registros:
+        clave = _clave_texto(r["descripcion"])
+        idx = exactos.get(clave)
+        if idx is None:
+            comparador = SequenceMatcher(None, "", clave, autojunk=False)
+            for i, (representante, _) in enumerate(grupos):
+                comparador.set_seq1(representante)
+                if (comparador.real_quick_ratio() >= SIMILITUD_MINIMA
+                        and comparador.quick_ratio() >= SIMILITUD_MINIMA
+                        and comparador.ratio() >= SIMILITUD_MINIMA):
+                    idx = i
+                    break
+            if idx is None:
+                grupos.append((clave, []))
+                idx = len(grupos) - 1
+            exactos[clave] = idx
+        grupos[idx][1].append(r)
+
+    # 2) Partir cada grupo en periodos cuando hay un salto de fechas
+    periodos = []
+    for _, miembros in grupos:
+        tramo = [miembros[0]]
+        for r in miembros[1:]:
+            if _dias_entre(tramo[-1]["fecha"], r["fecha"]) > DIAS_SALTO:
+                periodos.append(tramo)
+                tramo = []
+            tramo.append(r)
+        periodos.append(tramo)
+
+    salida = [
+        {
+            "desde": t[0]["fecha"],
+            "hasta": t[-1]["fecha"],
+            "n": len(t),
+            "descripcion": t[0]["descripcion"],
+            "primero": t[0],
+            "ultimo": t[-1],
+        }
+        for t in periodos
+    ]
+    salida.sort(key=lambda p: (p["desde"], orden_turno(p["primero"]["archivo"])))
+    return salida

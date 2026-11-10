@@ -5,12 +5,14 @@ import streamlit as st
 
 from buscador import (
     ACCIONES,
+    agrupar_repetidos,
     PROBLEMAS,
     buscar_en_texto,
     contar_palabra,
     extraer_fecha,
     normalizar,
     normalizar_tag,
+    orden_turno,
     parsear_consulta,
     resaltar_html,
 )
@@ -29,6 +31,9 @@ st.set_page_config(
 # de entorno PARTES_BASE (útil si algún día lo mueves a un servidor).
 CARPETA_BASE = os.environ.get("PARTES_BASE", r"C:\ProyectoPartesRelevo\base")
 RUTA_RELEVOS = os.path.join(CARPETA_BASE, "relevos_historico.csv")
+# Todas las menciones de equipos (preferido) o, si no existe, solo las
+# que tienen palabras clave (CSV antiguo).
+RUTA_MENCIONES = os.path.join(CARPETA_BASE, "incidencias.csv")
 RUTA_INCIDENCIAS = os.path.join(CARPETA_BASE, "incidencias_reales.csv")
 
 RESULTADOS_POR_PAGINA = 20
@@ -72,7 +77,8 @@ def cargar_relevos():
 
 @st.cache_data
 def cargar_incidencias():
-    df = pd.read_csv(RUTA_INCIDENCIAS)
+    ruta = RUTA_MENCIONES if os.path.exists(RUTA_MENCIONES) else RUTA_INCIDENCIAS
+    df = pd.read_csv(ruta)
     df["descripcion"] = df["descripcion"].fillna("").astype(str)
     df["archivo"] = df["archivo"].fillna("").astype(str)
     # Columnas opcionales: así funciona con el CSV antiguo y con el nuevo
@@ -151,9 +157,12 @@ with tab1:
             mascara &= resultado["texto_norm"].str.contains(t, regex=False)
         resultado = resultado[mascara]
 
-        resultado = resultado.sort_values(
-            "fecha", ascending=(orden == "Más antiguos")
-        )
+        # Por fecha y, dentro del día, por turno (mañana, tarde, noche)
+        resultado = resultado.assign(
+            _turno=resultado["archivo"].map(orden_turno)
+        ).sort_values(
+            ["fecha", "_turno"], ascending=(orden == "Más antiguos")
+        ).drop(columns="_turno")
 
         st.success(f"{len(resultado)} partes encontrados")
 
@@ -202,16 +211,35 @@ with tab2:
             incidencias["equipo_norm"] == normalizar_tag(equipo)
         ].copy()
 
-        st.success(f"{len(hist)} incidencias encontradas")
+        solo_claves = st.toggle(
+            "Solo líneas con palabras clave (fuga, avería, reparación…)",
+            value=False,
+            help="Desactivado: se ven TODAS las líneas donde sale el equipo, "
+                 "para no perder novedades que no usan esas palabras "
+                 "(p. ej. 'se deja en vigilancia').",
+        )
+        if solo_claves:
+            hist = hist[hist["etiquetas"] != ""]
+
+        st.success(f"{len(hist)} menciones encontradas")
 
         if len(hist) > 0:
             fechas = [f for f in hist["fecha"] if f]
+            periodos = agrupar_repetidos(hist.to_dict("records"))
 
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Incidencias", len(hist))
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric(
+                "Situaciones distintas", len(periodos),
+                help="Las líneas que se repiten turno tras turno cuentan "
+                     "como una sola situación.",
+            )
+            col2.metric(
+                "Turnos con mención", hist["archivo"].nunique(),
+                help="Número de partes en los que aparece el equipo.",
+            )
             if fechas:
-                col2.metric("Primer registro", min(fechas))
-                col3.metric("Último registro", max(fechas))
+                col3.metric("Primer registro", min(fechas))
+                col4.metric("Último registro", max(fechas))
 
             texto_total = " ".join(hist["descripcion"].tolist())
 
@@ -229,38 +257,74 @@ with tab2:
                 st.markdown("### Problemas detectados")
                 if problemas:
                     for p, n in sorted(problemas.items(), key=lambda x: -x[1]):
-                        st.write(f"• {p} ({n})")
+                        st.write(f"• {p} ({n} menciones)")
                 else:
                     st.write("No se detectan problemas recurrentes.")
             with c2:
                 st.markdown("### Acciones detectadas")
                 if acciones:
                     for a, n in sorted(acciones.items(), key=lambda x: -x[1]):
-                        st.write(f"• {a} ({n})")
+                        st.write(f"• {a} ({n} menciones)")
                 else:
                     st.write("No se detectan acciones.")
 
             st.divider()
             st.subheader("📅 Cronología")
 
-            hist = hist.sort_values("fecha")
-            for _, fila in hist.iterrows():
-                with st.expander(f"{fila['fecha'] or 'sin fecha'} | {fila['archivo']}"):
-                    if fila["contexto"]:
-                        st.text(fila["contexto"])
-                    else:
-                        st.write(fila["descripcion"])
+            hist = hist.assign(
+                _turno=hist["archivo"].map(orden_turno)
+            ).sort_values(["fecha", "_turno"]).drop(columns="_turno")
 
-                    # Contexto: busca el equipo en el parte original completo.
-                    original = relevos[relevos["archivo"] == fila["archivo"]]
-                    if len(original) and st.checkbox(
-                        "Ver en el parte original", key=f"orig_{fila.name}"
-                    ):
-                        mostrar_fragmentos(
-                            original.iloc[0]["texto"],
-                            [normalizar(equipo)],
-                            contexto=4,
+            agrupar = st.toggle(
+                "Agrupar lo que se repite turno tras turno",
+                value=True,
+                help="Activado: una línea que se copia igual durante muchos "
+                     "turnos se muestra una sola vez, con el periodo que "
+                     "duró. Desactivado: se ve cada parte por separado.",
+            )
+
+            def detalle(fila, clave):
+                """Texto de la mención y acceso al parte original."""
+                st.text(fila["contexto"] or fila["descripcion"])
+                original = relevos[relevos["archivo"] == fila["archivo"]]
+                if len(original) and st.checkbox(
+                    f"Ver en el parte original ({fila['archivo']})", key=clave
+                ):
+                    mostrar_fragmentos(
+                        original.iloc[0]["texto"], [normalizar(equipo)], contexto=4
+                    )
+
+            if agrupar:
+                st.caption(
+                    f"{len(hist)} menciones resumidas en {len(periodos)} "
+                    "situaciones. 🔁 = se repite durante varios turnos · "
+                    "📌 = aparece una sola vez (novedad puntual)."
+                )
+                for i, p in enumerate(periodos):
+                    resumen = p["descripcion"]
+                    if len(resumen) > 90:
+                        resumen = resumen[:90] + "…"
+                    if p["n"] > 1:
+                        titulo = (
+                            f"🔁 {p['desde'] or 'sin fecha'} → {p['hasta']} "
+                            f"({p['n']} turnos) | {resumen}"
                         )
+                    else:
+                        titulo = f"📌 {p['desde'] or 'sin fecha'} | {resumen}"
+                    with st.expander(titulo):
+                        if p["n"] > 1:
+                            st.markdown("**Primera vez que aparece:**")
+                            detalle(p["primero"], f"orig_{i}_a")
+                            st.markdown("**Última vez que aparece:**")
+                            detalle(p["ultimo"], f"orig_{i}_b")
+                        else:
+                            detalle(p["primero"], f"orig_{i}_a")
+            else:
+                for n, (_, fila) in enumerate(hist.iterrows()):
+                    with st.expander(
+                        f"{fila['fecha'] or 'sin fecha'} | {fila['archivo']}"
+                    ):
+                        detalle(fila, f"orig_s_{n}")
 
             st.download_button(
                 "📥 Exportar histórico",
