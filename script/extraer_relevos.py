@@ -10,6 +10,8 @@ Mejoras respecto a la versión anterior:
   - Ignora los archivos temporales de Excel (~$...).
   - Añade la columna "fecha" (del nombre del archivo o, si no tiene,
     de la fecha de modificación) y calcula el año de forma más fiable.
+  - Guarda el progreso cada 500 documentos: si se corta, no se pierde lo hecho.
+  - Si la unidad de red no está conectada, no toca el CSV existente.
   - INCREMENTAL: si ya existe el CSV, solo procesa los archivos nuevos o
     modificados. La primera vez tarda lo mismo; las siguientes, segundos.
     Para forzar que se procese todo de nuevo:  python extraer_relevos.py --todo
@@ -23,11 +25,16 @@ import re
 import sys
 from datetime import datetime
 
+import warnings
+
 import pandas as pd
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from buscador import extraer_fecha
+
+# Aviso inofensivo de openpyxl por las listas desplegables de algunos Excel
+warnings.filterwarnings("ignore", message="Data Validation extension")
 
 RUTA_RELEVOS = os.environ.get("PARTES_ORIGEN", r"I:\Producción\01. LIBRO DE RELEVOS")
 
@@ -39,6 +46,8 @@ CARPETAS_EXCLUIDAS = {
     "Cambio de turno Operadores de planta",
     "Cambio de turno Panelistas",
 }
+
+COLUMNAS = ["año", "fecha", "archivo", "tipo", "ruta", "modificado", "error", "texto"]
 
 EXTENSIONES = {".pdf", ".xls", ".xlsx", ".xlsm"}
 
@@ -175,14 +184,37 @@ def cargar_previo(forzar):
     return {fila["ruta"]: fila for fila in previo.to_dict("records")}
 
 
+GUARDAR_CADA = 500  # documentos procesados entre guardados parciales
+
+
+def guardar(filas):
+    """Escribe el CSV en un archivo temporal y lo cambia de golpe: si el
+    proceso se corta mientras escribe, el CSV anterior no se estropea."""
+    os.makedirs(CARPETA_BASE, exist_ok=True)
+    df = pd.DataFrame(filas, columns=COLUMNAS)
+    temporal = SALIDA + ".tmp"
+    df.to_csv(temporal, index=False, encoding="utf-8-sig")
+    os.replace(temporal, SALIDA)
+    return df
+
+
 def main():
     forzar = "--todo" in sys.argv
+
+    # Si la unidad de red no está conectada NO se toca el CSV existente.
+    if not os.path.isdir(RUTA_RELEVOS):
+        print(f"ERROR: no se puede acceder a {RUTA_RELEVOS}")
+        print("Comprueba que la unidad de red está conectada. No se ha cambiado nada.")
+        sys.exit(1)
+
     previo = cargar_previo(forzar)
     datos = []
+    vistos = set()
     nuevos = reutilizados = 0
 
     for raiz, archivo, extension in listar_archivos():
         ruta = os.path.join(raiz, archivo)
+        vistos.add(ruta)
         try:
             modificado = os.path.getmtime(ruta)
         except OSError:
@@ -220,10 +252,19 @@ def main():
         nuevos += 1
         if nuevos % 100 == 0:
             print(f"{nuevos} documentos procesados...")
+        if nuevos % GUARDAR_CADA == 0:
+            # Guardado parcial: lo hecho hasta ahora + lo anterior que aún
+            # no se ha revisado. Si se corta, la próxima vez continúa aquí.
+            pendientes = [f for r, f in previo.items() if r not in vistos]
+            guardar(datos + pendientes)
+            print("   (progreso guardado)")
 
-    df = pd.DataFrame(datos)
-    os.makedirs(CARPETA_BASE, exist_ok=True)
-    df.to_csv(SALIDA, index=False, encoding="utf-8-sig")
+    if not datos:
+        print(f"ERROR: no se ha encontrado ningún parte en {RUTA_RELEVOS}")
+        print("No se ha cambiado nada.")
+        sys.exit(1)
+
+    df = guardar(datos)
 
     errores = df[df["error"].fillna("") != ""] if len(df) else df
 

@@ -20,12 +20,22 @@ base/                     (en C:\ProyectoPartesRelevo\base, no se sube a GitHub)
 
 ## Uso
 
+Con doble clic (carpeta `script`):
+
+| Archivo | Qué hace |
+|---|---|
+| `Actualizar_y_abrir.bat` | Procesa los partes nuevos y abre el buscador |
+| `Abrir_buscador.bat` | Abre el buscador sin actualizar |
+| `Instalar_arranque_automatico.bat` | El buscador arranca solo con Windows; basta el favorito `http://localhost:8501` |
+| `Quitar_arranque_automatico.bat` | Deshace lo anterior |
+
+A mano:
+
 ```
-cd C:\ProyectoPartesRelevo\script
-pip install -r requirements.txt
-python extraer_relevos.py        (la 1ª vez tarda; después solo procesa lo nuevo)
-python extraer_incidencias.py
-streamlit run app.py
+py -m pip install -r requirements.txt     (solo la primera vez)
+py extraer_relevos.py
+py extraer_incidencias.py
+py -m streamlit run app.py
 ```
 
 ## Cómo busca
@@ -33,6 +43,7 @@ streamlit run app.py
 - Varias palabras → partes que contienen **todas** (`bomba fuga`).
 - Entre comillas → frase exacta (`"paso interno"`).
 - Sin importar tildes ni mayúsculas (`averia` encuentra `Avería`).
+- Los tags se buscan sin importar guiones (`vb1070` encuentra `VB-107-0`).
 - Muestra **todas** las coincidencias de cada parte, con líneas completas por
   delante y por detrás (ajustable con "Líneas de contexto"), resaltadas y
   ordenadas por fecha.

@@ -6,6 +6,7 @@ Se separa de la web para poder reutilizarla:
   - en el script que prepara los fragmentos para la IA (preparar_fragmentos.py)
 """
 
+import functools
 import html
 import re
 import unicodedata
@@ -141,6 +142,30 @@ def parsear_consulta(consulta):
     return terminos
 
 
+def parece_tag(termino):
+    """Un término con letras Y números sin espacios (vb1070, k-501, 6540c1)."""
+    return (
+        " " not in termino
+        and re.search(r"[a-z]", termino) is not None
+        and re.search(r"\d", termino) is not None
+    )
+
+
+@functools.lru_cache(maxsize=256)
+def patron_termino(termino):
+    """
+    Expresión regular para buscar un término en texto normalizado.
+
+    - Palabra o frase normal: se busca tal cual.
+    - Tag de equipo: se ignoran guiones y espacios, de modo que "vb1070"
+      encuentra también "VB-1070", "VB-107-0" y "VB 1070".
+    """
+    if parece_tag(termino):
+        compacto = re.sub(r"[\s\-]", "", termino)
+        return re.compile(r"[\s\-]?".join(re.escape(c) for c in compacto))
+    return re.compile(re.escape(termino))
+
+
 # --------------------------------------------------
 # SEGMENTACIÓN DEL TEXTO
 # --------------------------------------------------
@@ -188,8 +213,10 @@ def buscar_en_texto(texto, terminos, contexto=3):
         return []
 
     normalizados = [normalizar(s) for s in segmentos]
+    patrones = [patron_termino(t) for t in terminos]
     aciertos = [
-        i for i, s in enumerate(normalizados) if any(t in s for t in terminos)
+        i for i, s in enumerate(normalizados)
+        if any(p.search(s) for p in patrones)
     ]
 
     # Si los términos están en líneas distintas (p. ej. "bomba" arriba y
@@ -211,11 +238,9 @@ def resaltar_html(segmento, terminos):
     norm = normalizar(segmento)
     marcas = [False] * len(segmento)
     for t in terminos:
-        inicio = norm.find(t)
-        while inicio >= 0:
-            for k in range(inicio, inicio + len(t)):
+        for m in patron_termino(t).finditer(norm):
+            for k in range(m.start(), m.end()):
                 marcas[k] = True
-            inicio = norm.find(t, inicio + 1)
 
     partes, i = [], 0
     while i < len(segmento):

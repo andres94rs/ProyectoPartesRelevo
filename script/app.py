@@ -13,7 +13,9 @@ from buscador import (
     normalizar,
     normalizar_tag,
     orden_turno,
+    parece_tag,
     parsear_consulta,
+    patron_termino,
     resaltar_html,
 )
 
@@ -119,7 +121,8 @@ with tab1:
     st.caption(
         'Escribe varias palabras para buscar partes que contengan TODAS '
         '(ej.: `bomba fuga`). Usa comillas para una frase exacta '
-        '(ej.: `"paso interno"`). No importan tildes ni mayúsculas.'
+        '(ej.: `"paso interno"`). No importan tildes ni mayúsculas, '
+        'ni los guiones de los tags (`vb1070` encuentra `VB-107-0`).'
     )
 
     col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
@@ -151,10 +154,16 @@ with tab1:
 
     if terminos:
         # Todas las palabras deben aparecer en el parte.
-        # regex=False: caracteres como "(" o "+" en el tag no rompen la búsqueda.
+        # Los tags se buscan ignorando guiones (vb1070 = VB-107-0); el resto,
+        # como texto literal para que "(" o "+" no rompan la búsqueda.
         mascara = pd.Series(True, index=resultado.index)
         for t in terminos:
-            mascara &= resultado["texto_norm"].str.contains(t, regex=False)
+            if parece_tag(t):
+                mascara &= resultado["texto_norm"].str.contains(
+                    patron_termino(t).pattern, regex=True
+                )
+            else:
+                mascara &= resultado["texto_norm"].str.contains(t, regex=False)
         resultado = resultado[mascara]
 
         # Por fecha y, dentro del día, por turno (mañana, tarde, noche)
