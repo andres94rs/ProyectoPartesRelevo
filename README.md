@@ -29,6 +29,7 @@ Con doble clic (carpeta `script`):
 | `Crear_indice_IA.bat` | Prepara la búsqueda por significado (una sola vez; tarda) |
 | `Instalar_arranque_automatico.bat` | El buscador arranca solo con Windows; basta el favorito `http://localhost:8501` |
 | `Quitar_arranque_automatico.bat` | Deshace lo anterior |
+| `Arranque_buscador.bat` | Arranca el buscador minimizado (lo usa el arranque automático). Si falla, ver `registro_arranque.txt` |
 
 A mano:
 
