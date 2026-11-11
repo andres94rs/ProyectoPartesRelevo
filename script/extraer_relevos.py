@@ -173,12 +173,15 @@ def listar_archivos():
 def cargar_previo(forzar):
     if forzar or not os.path.exists(SALIDA):
         return {}
-    previo = pd.read_csv(SALIDA)
+    previo = pd.read_csv(SALIDA, dtype={"error": str, "texto": str, "fecha": str})
     if "modificado" not in previo.columns:
         return {}  # CSV de la versión anterior: se regenera todo
-    if "error" not in previo.columns:
-        previo["error"] = ""
-    previo["error"] = previo["error"].fillna("")
+    for col in ["error", "texto", "fecha"]:
+        if col not in previo.columns:
+            previo[col] = ""
+        # astype(object): si la columna viene vacía entera, pandas la lee
+        # como números y avisaría al rellenarla con texto.
+        previo[col] = previo[col].astype(object).fillna("")
     # Solo se reutilizan los que salieron bien
     previo = previo[previo["error"] == ""]
     return {fila["ruta"]: fila for fila in previo.to_dict("records")}
@@ -266,7 +269,7 @@ def main():
 
     df = guardar(datos)
 
-    errores = df[df["error"].fillna("") != ""] if len(df) else df
+    errores = df[df["error"].astype(object).fillna("") != ""]
 
     print()
     print("=" * 50)
