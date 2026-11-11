@@ -8,7 +8,7 @@ cd /d "%~dp0"
 echo ==================================================
 echo  1/2  Instalando la libreria necesaria...
 echo ==================================================
-py -m pip install fastembed
+py -m pip install fastembed truststore
 if errorlevel 1 goto error
 
 echo.

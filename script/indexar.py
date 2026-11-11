@@ -100,12 +100,13 @@ def main():
         try:
             modelo = sem.cargar_modelo()
         except ImportError:
-            print("ERROR: falta la librería. Ejecuta:  py -m pip install fastembed")
+            print("ERROR: falta la librería. Ejecuta:  py -m pip install fastembed truststore")
             sys.exit(1)
         except Exception as e:  # noqa: BLE001
             print("ERROR: no se ha podido cargar o descargar el modelo.")
-            print("Si es la primera vez, puede que la red de la empresa bloquee")
-            print("la descarga desde huggingface.co. Detalle:")
+            print("Si es la primera vez, puede que la red de la empresa no permita")
+            print("la descarga desde huggingface.co. NO desactives la verificacion")
+            print("de certificados: consulta con informatica. Detalle:")
             print(f"  {type(e).__name__}: {e}")
             sys.exit(1)
 

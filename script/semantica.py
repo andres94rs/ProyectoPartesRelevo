@@ -55,8 +55,27 @@ _PALABRA = re.compile(r"[a-zñ]{3,}")
 # --------------------------------------------------
 
 
+def usar_certificados_del_sistema():
+    """
+    En redes de empresa las conexiones seguras suelen ir firmadas con un
+    certificado propio que está instalado en Windows, pero que Python no
+    conoce (error CERTIFICATE_VERIFY_FAILED al descargar el modelo).
+
+    Esto hace que Python confíe en los certificados de Windows, igual que
+    Chrome o pip. La verificación NO se desactiva.
+    """
+    try:
+        import truststore  # pip install truststore
+    except ImportError:
+        return False
+    truststore.inject_into_ssl()
+    return True
+
+
 def cargar_modelo():
     """Carga el modelo (la primera vez lo descarga a base/modelos)."""
+    usar_certificados_del_sistema()
+
     from fastembed import TextEmbedding  # pip install fastembed
     from fastembed.common.model_description import ModelSource, PoolingType
 
