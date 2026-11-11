@@ -89,7 +89,12 @@ def main():
 
     incidencias = []
 
-    for _, fila in df.iterrows():
+    total = len(df)
+    print(f"Buscando equipos en {total} partes (puede tardar unos minutos)...")
+
+    for n, (_, fila) in enumerate(df.iterrows(), start=1):
+        if n % 500 == 0:
+            print(f"{n} de {total} partes revisados...")
         archivo = fila["archivo"]
         fecha = fila["fecha"] if "fecha" in df.columns and pd.notna(fila.get("fecha")) \
             else extraer_fecha(archivo)
@@ -113,6 +118,7 @@ def main():
     columnas = ["equipo", "equipo_norm", "fecha", "archivo",
                 "descripcion", "contexto", "etiquetas"]
     inc = pd.DataFrame(incidencias, columns=columnas)
+    print("Guardando resultados...")
     inc.to_csv(SALIDA, index=False, encoding="utf-8-sig")
 
     # Incidencias reales: la LÍNEA del equipo tiene alguna palabra clave.
