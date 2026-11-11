@@ -388,3 +388,19 @@ def agrupar_repetidos(registros):
     ]
     salida.sort(key=lambda p: (p["desde"], orden_turno(p["primero"]["archivo"])))
     return salida
+
+
+def linea_mas_parecida(texto, clave):
+    """Línea (normalizada) del parte que más se parece a `clave`."""
+    from difflib import SequenceMatcher
+
+    mejor, mejor_ratio = clave, 0.0
+    comparador = SequenceMatcher(None, "", clave, autojunk=False)
+    for seg in segmentar(texto):
+        norm = normalizar(seg)
+        comparador.set_seq1(norm)
+        if comparador.quick_ratio() > mejor_ratio:
+            ratio = comparador.ratio()
+            if ratio > mejor_ratio:
+                mejor, mejor_ratio = norm, ratio
+    return mejor

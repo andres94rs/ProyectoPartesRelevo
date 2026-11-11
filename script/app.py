@@ -12,6 +12,7 @@ from buscador import (
     buscar_en_texto,
     contar_palabra,
     extraer_fecha,
+    linea_mas_parecida,
     normalizar,
     normalizar_tag,
     orden_turno,
@@ -438,6 +439,11 @@ with tab3:
                         cuando = r["primera_fecha"] or "sin fecha"
                     with st.expander(f"{pos}. 📅 {cuando} | {resumen}"):
                         st.markdown(f"**{r['texto']}**")
+                        if r["variantes"] > 1:
+                            st.caption(
+                                f"Incluye {r['variantes']} redacciones casi "
+                                "iguales de esta misma anotación."
+                            )
                         archivo = r["ultimo_archivo"]
                         if r["n"] > 1:
                             cual = st.radio(
@@ -450,6 +456,11 @@ with tab3:
                         st.caption(archivo)
                         original = relevos[relevos["archivo"] == archivo]
                         if len(original):
-                            mostrar_fragmentos(
-                                original.iloc[0]["texto"], [r["clave"]], contexto=4
-                            )
+                            texto_parte = original.iloc[0]["texto"]
+                            if not buscar_en_texto(texto_parte, [r["clave"]], 0):
+                                # En ese parte la anotación tiene otra redacción:
+                                # se localiza la línea que más se le parece.
+                                parecida = linea_mas_parecida(texto_parte, r["clave"])
+                                mostrar_fragmentos(texto_parte, [parecida], contexto=4)
+                            else:
+                                mostrar_fragmentos(texto_parte, [r["clave"]], contexto=4)

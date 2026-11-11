@@ -20,7 +20,14 @@ import re
 import numpy as np
 import pandas as pd
 
-from buscador import normalizar, orden_turno, patron_termino, parece_tag, segmentar
+from buscador import (
+    SIMILITUD_MINIMA,
+    normalizar,
+    orden_turno,
+    parece_tag,
+    patron_termino,
+    segmentar,
+)
 
 CARPETA_BASE = os.environ.get("PARTES_BASE", r"C:\ProyectoPartesRelevo\base")
 CARPETA_INDICE = os.path.join(CARPETA_BASE, "indice_semantico")
@@ -238,7 +245,7 @@ def buscar(modelo, lineas, vectores, claves, consulta, n_resultados=20,
 
     candidatos = np.flatnonzero(mascara)
     if len(candidatos) == 0:
-        return lineas.iloc[[]].assign(puntuacion=[], parecido=[]), tags
+        return lineas.iloc[[]].assign(puntuacion=[], parecido=[], variantes=[]), tags
 
     # 1) Significado
     q = vectorizar_consulta(modelo, consulta)
@@ -260,8 +267,46 @@ def buscar(modelo, lineas, vectores, claves, consulta, n_resultados=20,
             comunes = len(raices_q & raices(claves.iat[candidatos[i]]))
             puntos[i] += PESO_PALABRAS * comunes / len(raices_q)
 
-    orden = preseleccion[np.argsort(-puntos[preseleccion])][:n_resultados]
+    # Se cogen de más para poder juntar después las líneas casi iguales
+    orden = preseleccion[np.argsort(-puntos[preseleccion])][: n_resultados * 4]
     resultado = lineas.iloc[candidatos[orden]].copy()
     resultado["puntuacion"] = puntos[orden]
     resultado["parecido"] = parecido[orden]
-    return resultado, tags
+    return juntar_casi_iguales(resultado, n_resultados), tags
+
+
+def juntar_casi_iguales(resultado, n_resultados):
+    """
+    Junta en un solo resultado las líneas que dicen casi lo mismo (la misma
+    anotación copiada varios turnos con algún cambio mínimo), sumando sus
+    turnos y ampliando el periodo. Se conserva la mejor puntuada.
+    """
+    from difflib import SequenceMatcher
+
+    grupos = []  # cada grupo: dict con los datos del mejor + acumulados
+    for fila in resultado.to_dict("records"):
+        igual = None
+        comparador = SequenceMatcher(None, "", fila["clave"], autojunk=False)
+        for g in grupos:
+            comparador.set_seq1(g["clave"])
+            if (comparador.real_quick_ratio() >= SIMILITUD_MINIMA
+                    and comparador.quick_ratio() >= SIMILITUD_MINIMA
+                    and comparador.ratio() >= SIMILITUD_MINIMA):
+                igual = g
+                break
+        if igual is None:
+            if len(grupos) < n_resultados:
+                fila["variantes"] = 1
+                grupos.append(fila)
+            continue
+        igual["n"] += fila["n"]
+        igual["variantes"] += 1
+        if fila["primera_fecha"] < igual["primera_fecha"]:
+            igual["primera_fecha"] = fila["primera_fecha"]
+            igual["primer_archivo"] = fila["primer_archivo"]
+        if fila["ultima_fecha"] > igual["ultima_fecha"]:
+            igual["ultima_fecha"] = fila["ultima_fecha"]
+            igual["ultimo_archivo"] = fila["ultimo_archivo"]
+
+    columnas = list(resultado.columns) + ["variantes"]
+    return pd.DataFrame(grupos, columns=columnas)
