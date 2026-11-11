@@ -26,6 +26,7 @@ Con doble clic (carpeta `script`):
 |---|---|
 | `Actualizar_y_abrir.bat` | Procesa los partes nuevos y abre el buscador |
 | `Abrir_buscador.bat` | Abre el buscador sin actualizar |
+| `Crear_indice_IA.bat` | Prepara la búsqueda por significado (una sola vez; tarda) |
 | `Instalar_arranque_automatico.bat` | El buscador arranca solo con Windows; basta el favorito `http://localhost:8501` |
 | `Quitar_arranque_automatico.bat` | Deshace lo anterior |
 
@@ -47,3 +48,16 @@ py -m streamlit run app.py
 - Muestra **todas** las coincidencias de cada parte, con líneas completas por
   delante y por detrás (ajustable con "Líneas de contexto"), resaltadas y
   ordenadas por fecha.
+
+## Búsqueda por significado (fase 1 de IA)
+
+Pestaña **🧠 Buscar por significado**: encuentra líneas de los partes que
+hablan de lo que preguntas aunque usen otras palabras ("derrame al suelo"
+encuentra "rebose del foso"). Todo se ejecuta en el ordenador, sin Ollama
+y sin enviar datos fuera; solo se descarga una vez el modelo (~470 MB,
+`intfloat/multilingual-e5-small`) a `base/modelos`.
+
+- `semantica.py`: modelo, líneas distintas y búsqueda híbrida
+  (significado + palabras en común + filtro por tag de equipo).
+- `indexar.py`: crea/actualiza `base/indice_semantico/`. Incremental y
+  reanudable.

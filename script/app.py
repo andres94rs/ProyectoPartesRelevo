@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import streamlit as st
 
+import semantica as sem
+
 from buscador import (
     ACCIONES,
     agrupar_repetidos,
@@ -110,7 +112,9 @@ def mostrar_fragmentos(texto, terminos, contexto):
 # PESTAÑAS
 # --------------------------------------------------
 
-tab1, tab2 = st.tabs(["🔎 Buscar relevos", "🛠 Ficha equipo"])
+tab1, tab2, tab3 = st.tabs(
+    ["🔎 Buscar relevos", "🛠 Ficha equipo", "🧠 Buscar por significado"]
+)
 
 # ==================================================
 # TAB 1
@@ -340,3 +344,112 @@ with tab2:
                 hist.to_csv(index=False),
                 file_name=f"{equipo}.csv",
             )
+
+# ==================================================
+# TAB 3 - BÚSQUEDA POR SIGNIFICADO
+# ==================================================
+
+
+@st.cache_resource(show_spinner="Cargando el modelo de IA...")
+def cargar_modelo_semantico():
+    return sem.cargar_modelo()
+
+
+@st.cache_resource(show_spinner="Cargando el índice...")
+def cargar_indice_semantico(_version):
+    # _version (fecha del archivo) hace que se recargue al actualizar el índice
+    return sem.cargar_indice()
+
+
+with tab3:
+    st.title("🧠 Buscar por significado")
+    st.caption(
+        "Escribe lo que buscas con tus palabras (ej.: `pérdida de producto en "
+        "bombas`, `válvula que no cierra bien`). Encuentra líneas de los partes "
+        "que hablan de eso aunque usen otras palabras. Si incluyes un tag "
+        "(ej.: `k-501 vibraciones`), solo busca en las líneas de ese equipo."
+    )
+
+    if not sem.indice_existe():
+        st.info(
+            "Todavía no se ha creado el índice de búsqueda por significado.\n\n"
+            "Haz doble clic en **Crear_indice_IA.bat** (carpeta de los scripts). "
+            "La primera vez descarga el modelo (~470 MB) y procesa todos los "
+            "partes; después esta pestaña funcionará sola."
+        )
+    else:
+        lineas_sem, vectores_sem = cargar_indice_semantico(
+            os.path.getmtime(sem.RUTA_VECTORES)
+        )
+        if lineas_sem is None:
+            st.warning(
+                "El índice está incompleto. Vuelve a ejecutar **Crear_indice_IA.bat**."
+            )
+        else:
+            c1, c2, c3 = st.columns([4, 1, 1])
+            with c1:
+                pregunta = st.text_input("¿Qué buscas?", key="pregunta")
+            with c2:
+                años_sem = sorted(
+                    {f[:4] for f in lineas_sem["ultima_fecha"] if f}
+                    | {f[:4] for f in lineas_sem["primera_fecha"] if f}
+                )
+                año_sem = st.selectbox("Año", ["Todos"] + años_sem, key="año_sem")
+            with c3:
+                n_sem = st.slider("Resultados", 5, 50, 15, step=5)
+
+            if pregunta.strip():
+                try:
+                    modelo_sem = cargar_modelo_semantico()
+                except Exception as e:  # noqa: BLE001
+                    st.error(
+                        "No se ha podido cargar el modelo de IA. Comprueba que "
+                        "está instalada la librería (`py -m pip install fastembed`) "
+                        f"y que existe la carpeta de modelos. Detalle: {e}"
+                    )
+                    st.stop()
+
+                desde = f"{año_sem}-01-01" if año_sem != "Todos" else ""
+                hasta = f"{año_sem}-12-31" if año_sem != "Todos" else ""
+                encontrados, tags = sem.buscar(
+                    modelo_sem, lineas_sem, vectores_sem, lineas_sem["clave"],
+                    pregunta, n_sem, desde, hasta,
+                )
+
+                if tags:
+                    st.caption(
+                        "Buscando solo en líneas del equipo: "
+                        + ", ".join(t.upper() for t in tags)
+                    )
+                if len(encontrados) == 0:
+                    st.warning("No hay ninguna línea que cumpla esos filtros.")
+                else:
+                    st.caption(
+                        f"Las {len(encontrados)} líneas más relacionadas, de "
+                        f"{len(lineas_sem)} líneas distintas. La primera es la "
+                        "más parecida; las últimas pueden no tener relación."
+                    )
+
+                for pos, (_, r) in enumerate(encontrados.iterrows(), start=1):
+                    resumen = r["texto"] if len(r["texto"]) <= 95 else r["texto"][:95] + "…"
+                    if r["n"] > 1:
+                        cuando = f"{r['primera_fecha']} → {r['ultima_fecha']} ({r['n']} turnos)"
+                    else:
+                        cuando = r["primera_fecha"] or "sin fecha"
+                    with st.expander(f"{pos}. 📅 {cuando} | {resumen}"):
+                        st.markdown(f"**{r['texto']}**")
+                        archivo = r["ultimo_archivo"]
+                        if r["n"] > 1:
+                            cual = st.radio(
+                                "Ver en el parte:",
+                                ["Última vez que aparece", "Primera vez que aparece"],
+                                horizontal=True, key=f"sem_cual_{pos}",
+                            )
+                            if cual.startswith("Primera"):
+                                archivo = r["primer_archivo"]
+                        st.caption(archivo)
+                        original = relevos[relevos["archivo"] == archivo]
+                        if len(original):
+                            mostrar_fragmentos(
+                                original.iloc[0]["texto"], [r["clave"]], contexto=4
+                            )
