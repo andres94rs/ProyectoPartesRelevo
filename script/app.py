@@ -68,8 +68,15 @@ st.markdown(
 # --------------------------------------------------
 
 
-@st.cache_data
-def cargar_relevos():
+def version(ruta):
+    """Fecha de modificación del archivo: si cambia, se recargan los datos.
+    Así un buscador que lleva horas abierto ve los partes nuevos tras
+    ejecutar Actualizar_y_abrir.bat, sin tener que reiniciarlo."""
+    return os.path.getmtime(ruta) if os.path.exists(ruta) else 0
+
+
+@st.cache_data(max_entries=1)
+def cargar_relevos(version_archivo=None):
     df = pd.read_csv(RUTA_RELEVOS)
     df["texto"] = df["texto"].fillna("").astype(str)
     df["archivo"] = df["archivo"].fillna("").astype(str)
@@ -80,9 +87,13 @@ def cargar_relevos():
     return df
 
 
-@st.cache_data
-def cargar_incidencias():
-    ruta = RUTA_MENCIONES if os.path.exists(RUTA_MENCIONES) else RUTA_INCIDENCIAS
+def ruta_incidencias():
+    return RUTA_MENCIONES if os.path.exists(RUTA_MENCIONES) else RUTA_INCIDENCIAS
+
+
+@st.cache_data(max_entries=1)
+def cargar_incidencias(version_archivo=None):
+    ruta = ruta_incidencias()
     df = pd.read_csv(ruta)
     df["descripcion"] = df["descripcion"].fillna("").astype(str)
     df["archivo"] = df["archivo"].fillna("").astype(str)
@@ -95,8 +106,8 @@ def cargar_incidencias():
     return df
 
 
-relevos = cargar_relevos()
-incidencias = cargar_incidencias()
+relevos = cargar_relevos(version(RUTA_RELEVOS))
+incidencias = cargar_incidencias(version(ruta_incidencias()))
 
 def mostrar_fragmentos(texto, terminos, contexto):
     """Pinta todas las zonas del parte donde aparece la búsqueda."""
@@ -356,9 +367,10 @@ def cargar_modelo_semantico():
     return sem.cargar_modelo()
 
 
-@st.cache_resource(show_spinner="Cargando el índice...")
-def cargar_indice_semantico(_version):
-    # _version (fecha del archivo) hace que se recargue al actualizar el índice
+@st.cache_resource(show_spinner="Cargando el índice...", max_entries=1)
+def cargar_indice_semantico(version_archivo):
+    # version_archivo (fecha del archivo) hace que se recargue al actualizar
+    # el índice. Ojo: no puede empezar por "_" o Streamlit lo ignoraría.
     return sem.cargar_indice()
 
 

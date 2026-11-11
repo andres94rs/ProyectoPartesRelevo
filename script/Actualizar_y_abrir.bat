@@ -24,11 +24,21 @@ py indexar.py --si-existe
 if errorlevel 1 echo (No se ha podido actualizar; el resto del buscador funciona igual.)
 
 echo.
+rem Si el buscador ya esta abierto (p. ej. por el arranque automatico),
+rem se recargan solos los datos nuevos: basta con abrir el navegador.
+netstat -ano | findstr /R /C:":8501 .*LISTENING" >nul
+if not errorlevel 1 (
+    echo El buscador ya esta funcionando. Abriendo http://localhost:8501 ...
+    start "" http://localhost:8501
+    timeout /t 3 >nul
+    exit /b 0
+)
+
 echo ==================================================
 echo  4/4  Abriendo el buscador...
 echo       (no cierres esta ventana mientras lo uses)
 echo ==================================================
-py -m streamlit run app.py
+py -m streamlit run app.py --server.port 8501
 pause
 exit /b 0
 
